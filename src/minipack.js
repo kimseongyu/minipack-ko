@@ -1,93 +1,86 @@
 /**
- * Module bundlers compile small pieces of code into something larger and more
- * complex that can run in a web browser. These small pieces are just JavaScript
- * files, and dependencies between them are expressed by a module system
+ * 모듈 번들러는 작은 코드 조각들을 웹에서 작동할 수 있는 큰 복잡한 코드로 변환합니다.
+ * 작은 조각들은 단순한 JavaScript 파일들이며, 이들의 의존성은 모듈 시스템으로 표현됩니다.
  * (https://webpack.js.org/concepts/modules).
  *
- * Module bundlers have this concept of an entry file. Instead of adding a few
- * script tags in the browser and letting them run, we let the bundler know
- * which file is the main file of our application. This is the file that should
- * bootstrap our entire application.
+ * 모듈 번들러는 entry file이라는 개념을 가지고 있습니다.
+ * 브라우저에 몇 개의 스크립트 태그를 추가하고실행하는 대신,
+ * 번들러에게 어느 파일이 애플리케이션의 메인 파일인지 알려줍니다.
+ * 이 파일은 전체 애플리케이션을 부트스트랩하는 파일입니다.
  *
- * Our bundler will start from that entry file, and it will try to understand
- * which files it depends on. Then, it will try to understand which files its
- * dependencies depend on. It will keep doing that until it figures out about
- * every module in our application, and how they depend on one another.
+ * 번들러는 entry file에서 시작하여 의존하는 파일들을 이해하려고 합니다.
+ * 그런 다음, 그 파일들이 의존하는 파일들을 이해하려고 합니다.
+ * 애플리케이션의 모든 모듈들이 서로 어떻게 의존하는지 파악할 때까지 계속해서 수행합니다.
  *
- * This understanding of a project is called the dependency graph.
+ * 프로젝트에 대한 이해를 dependency graph라고 합니다.
  *
- * In this example, we will create a dependency graph and use it to package
- * all of its modules in one bundle.
+ * 예를 들어, 우리는 dependency graph를 만들어 모든 모듈을 하나의 번들로 패키징하는데 사용할 예정입니다.
  *
- * Let's begin :)
+ * 시작해봅시다 :)
  *
- * Please note: This is a very simplified example. Handling cases such as
+ * 참고: 이 예제는 매우 단순한 예제입니다. 예제를 가능한 간단하게 만들기 위해서
  * circular dependencies, caching module exports, parsing each module just once
- * and others are skipped to make this example as simple as possible.
+ * 등의 경우는 생략했습니다.
  */
 
-const fs = require('fs');
-const path = require('path');
-const babylon = require('babylon');
-const traverse = require('babel-traverse').default;
-const {transformFromAst} = require('babel-core');
+const fs = require("fs");
+const path = require("path");
+const babylon = require("babylon");
+const traverse = require("babel-traverse").default;
+const { transformFromAst } = require("babel-core");
 
 let ID = 0;
 
-// We start by creating a function that will accept a path to a file, read
-// its contents, and extract its dependencies.
+// 파일 경로를 받아 파일 내용을 읽고, 의존하는 파일들을 추출하는 함수를 만듭니다.
 function createAsset(filename) {
-  // Read the content of the file as a string.
-  const content = fs.readFileSync(filename, 'utf-8');
+  // 파일 내용을 문자열로 읽습니다.
+  const content = fs.readFileSync(filename, "utf-8");
 
-  // Now we try to figure out which files this file depends on. We can do that
-  // by looking at its content for import strings. However, this is a pretty
-  // clunky approach, so instead, we will use a JavaScript parser.
+  // 어느 파일들이 이 파일에 의존하는지 알아내기 위해, import 문자열의 내용들을 찾아봅니다.
+  // 이 방법은 투박한 방법이므로, 대신에 JavaScript 파서를 사용할 것입니다.
   //
-  // JavaScript parsers are tools that can read and understand JavaScript code.
-  // They generate a more abstract model called an AST (abstract syntax tree).
+  // JavaScript 파서는 JavaScript 코드를 읽고 이해할 수 있는 도구입니다.
+  // 이들은 AST(abstract syntax tree)라고 하는 더 추상적인 모델을 생성합니다.
 
-  // I strongly suggest that you look at AST Explorer (https://astexplorer.net)
-  // to see how an AST looks like.
+  // AST Explorer(https://astexplorer.net)를 참고하여 AST가 어떻게 생겼는지 확인해보세요.
   //
-  // The AST contains a lot of information about our code. We can query it to
-  // understand what our code is trying to do.
+  // AST는 우리의 코드에 대한 많은 정보를 포함합니다.
+  // 우리는 이를 쿼리하여 코드가 무엇을 시도하려고 하는지 이해할 수 있습니다.
   const ast = babylon.parse(content, {
-    sourceType: 'module',
+    sourceType: "module",
   });
 
-  // This array will hold the relative paths of modules this module depends on.
+  // 이 배열은 이 모듈이 의존하고 있는 모듈들의 상대 경로를 저장합니다.
   const dependencies = [];
 
-  // We traverse the AST to try and understand which modules this module depends
-  // on. To do that, we check every import declaration in the AST.
+  // 우리는 AST를 순회하여 이 모듈이 의존하는 모듈들을 알아내려고 합니다.
+  // 이를 위해, 우리는 AST에서 모든 import 선언을 확인합니다.
   traverse(ast, {
-    // EcmaScript modules are fairly easy because they are static. This means
-    // that you can't import a variable, or conditionally import another module.
-    // Every time we see an import statement we can just count its value as a
-    // dependency.
-    ImportDeclaration: ({node}) => {
-      // We push the value that we import into the dependencies array.
+    // EcmaScript 모듈들은 정적이기에 상대적으로 쉽습니다.
+    // 변수를 import할 수 없거나 조건적으로 다른 모듈을 import할 수 없음을 의미합니다.
+    // import 구문을 볼 때마다 우리는 그 값들을 의존성으로 간주할 수 있습니다.
+    ImportDeclaration: ({ node }) => {
+      // 우리는 의존성 배열에 우리가 import한 값을 넣습니다.
       dependencies.push(node.source.value);
     },
   });
 
-  // We also assign a unique identifier to this module by incrementing a simple
-  // counter.
+  // 우리는 간단히 증가하는 카운터를 이 모듈에 고유한 식별자로 할당합니다.
   const id = ID++;
 
   // We use EcmaScript modules and other JavaScript features that may not be
   // supported on all browsers. To make sure our bundle runs in all browsers we
   // will transpile it with Babel (see https://babeljs.io).
+  // 우리는 모든 브라우저에서 지원하지 않을 수 있는 EcmaScript 모듈들과 다른 JavaScript 기능들을 사용합니다.
+  // 이를 위해, 우리는 Babel을 사용하여 트랜스파일합니다. (https://babeljs.io)
   //
-  // The `presets` option is a set of rules that tell Babel how to transpile
-  // our code. We use `babel-preset-env` to transpile our code to something
-  // that most browsers can run.
-  const {code} = transformFromAst(ast, null, {
-    presets: ['env'],
+  // `presets` 옵션은 Babel이 우리의 코드를 트랜스파일하는 방법을 알려주는 규칙들의 집합입니다.
+  // 우리는 `babel-preset-env`를 사용하여 대부분의 브라우저에서 실행할 수 있는 코드로 트랜스파일합니다.
+  const { code } = transformFromAst(ast, null, {
+    presets: ["env"],
   });
 
-  // Return all information about this module.
+  // 이 모듈에 대한 모든 정보를 반환합니다.
   return {
     id,
     filename,
@@ -125,7 +118,7 @@ function createGraph(entry) {
     const dirname = path.dirname(asset.filename);
 
     // We iterate over the list of relative paths to its dependencies.
-    asset.dependencies.forEach(relativePath => {
+    asset.dependencies.forEach((relativePath) => {
       // Our `createAsset()` function expects an absolute filename. The
       // dependencies array is an array of relative paths. These paths are
       // relative to the file that imported them. We can turn the relative path
@@ -162,13 +155,13 @@ function createGraph(entry) {
 // That function will receive just one parameter: An object with information
 // about every module in our graph.
 function bundle(graph) {
-  let modules = '';
+  let modules = "";
 
   // Before we get to the body of that function, we'll construct the object that
   // we'll pass to it as a parameter. Please note that this string that we're
   // building gets wrapped by two curly braces ({}) so for every module, we add
   // a string of this format: `key: value,`.
-  graph.forEach(mod => {
+  graph.forEach((mod) => {
     // Every module in the graph has an entry in this object. We use the
     // module's id as the key and an array for the value (we have 2 values for
     // every module).
@@ -243,7 +236,9 @@ function bundle(graph) {
   return result;
 }
 
-const graph = createGraph('./example/entry.js');
+const graph = createGraph("./example/entry.js");
 const result = bundle(graph);
 
 console.log(result);
+fs.mkdirSync("./lib", { recursive: true });
+fs.writeFileSync("./lib/bundle.js", result);
